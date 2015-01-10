@@ -1,0 +1,499 @@
+#include <iostream>
+#include "player.hpp"
+#include <stdlib.h>
+#include <cmath>
+#include "pbots_calc.h"
+
+Player::Player() {
+  //create_equity250();
+}
+
+/**
+ * Simple example pokerbot, written in C++.
+ *
+ * This is an example of a bare bones pokerbot. It only sets up the socket
+ * necessary to connect with the engine (using a Boost iostream for
+ * convenience) and then always returns the same action.  It is meant as an
+ * example of how a pokerbot should communicate with the engine.
+ */
+void Player::run(tcp::iostream &stream) {
+  std::string line;
+  while (std::getline(stream, line)) {
+    // For now, just print out whatever date is read in.
+    std::cout << line << "\n";
+
+    std::string getaction("GETACTION");
+    std::string request_keyvalue_action("REQUESTKEYVALUES");
+		std::string newgame("NEWGAME");
+		std::string keyvalue("KEYVALUE");
+		std::string newhand("NEWHAND");
+		std::string handover("HANDOVER");
+    std::string first_word = line.substr(0, line.find_first_of(' '));
+		if (newgame.compare(first_word) == 0) {
+			//Call handle new game
+      new_game(line.substr(line.find_first_of(' ')+1));
+	  } else if (getaction.compare(first_word) == 0) {
+      // Respond with CHECK when playing, you'll want to change this.
+      get_action(line.substr(line.find_first_of(' ')+1));
+		  
+			// EXAMPLE CALC
+			Results* res;
+			char* board = "";
+			char* dead = "";
+			res = alloc_results();
+			int err = calc("Ac:Ad", board, dead, 10000, res);
+			print_results(res);
+			free_results(res);
+
+			// END EXAMPLE CALC
+
+			cout << res->ev << "\n";
+			
+			
+			//get_action_respond(stream);
+      stream << "CHECK\n";
+    } else if (request_keyvalue_action.compare(first_word) == 0) {
+		
+			// tests
+			//std::cout << player1 << " " << player2 << " " << num_hands << " " << my_bank << "\n";
+			//for (int i=0; i<10; i++)
+			//	std::cout << action_list[i][0].action << ":" 
+			//						<< action_list[i][0].actor << "\n";
+			// end tests
+
+
+	    // FINISh indicates no more keyvalue pairs to store.
+			stream << "FINISH\n";
+    } else if (keyvalue.compare(first_word) == 0){
+      //Call handle keyvalue
+    } else if (newhand.compare(first_word) == 0){
+			//Call handle newhand
+			new_hand(line.substr(line.find_first_of(' ')+1));
+		} else if (handover.compare(first_word) == 0){
+			//Call handle handover
+			hand_over(line.substr(line.find_first_of(' ')+1));
+		}
+
+  }
+
+  std::cout << "Gameover, engine disconnected.\n";
+}
+
+void Player::new_game(std::string line){
+	int space_index = line.find_first_of(' ');
+	player1 = line.substr(0, space_index);
+  line = line.substr(space_index+1);
+
+  space_index = line.find_first_of(' ');
+	player2 = line.substr(0, space_index);
+  line = line.substr(space_index+1);
+	
+	space_index = line.find_first_of(' ');
+	start_stack = atoi(line.substr(0, space_index).c_str());
+	line = line.substr(space_index+1);
+
+  space_index = line.find_first_of(' ');
+	big_blind = atoi(line.substr(0, space_index).c_str());
+	line = line.substr(space_index+1);
+
+	space_index = line.find_first_of(' ');
+	num_hands = atoi(line.substr(0, space_index).c_str());
+	line = line.substr(space_index+1);
+
+	start_time = atof(line.c_str());
+
+}
+
+void Player::new_hand(std::string line){
+ 	int space_index = line.find_first_of(' ');
+	hand_id = atoi(line.substr(0, space_index).c_str());
+	line = line.substr(space_index+1);
+
+ 	space_index = line.find_first_of(' ');
+  button = !(line.substr(0, space_index).compare("true"));	
+	// button=1 if string==true, else button=0
+	line = line.substr(space_index+1);
+
+	space_index = line.find_first_of(' ');
+	std::string c1 = line.substr(0, space_index);
+	card1.rank = c1[0];
+	card1.suit = c1[1];
+	line = line.substr(space_index+1);
+
+	space_index = line.find_first_of(' ');
+	std::string c2 = line.substr(0, space_index);
+	card2.rank = c2[0];
+	card2.suit = c2[1];
+	line = line.substr(space_index+1);
+
+	space_index = line.find_first_of(' ');
+	std::string c3 = line.substr(0, space_index);
+	card3.rank = c3[0];
+	card3.suit = c3[1];
+	line = line.substr(space_index+1);
+
+	hands[hand_id-1].cards[0] = card1;
+	hands[hand_id-1].cards[1] = card2;
+	hands[hand_id-1].cards[2] = card3;
+
+	space_index = line.find_first_of(' ');
+  my_bank = atoi(line.substr(0, space_index).c_str());
+	line = line.substr(space_index+1);
+
+	space_index = line.find_first_of(' ');
+	opp_bank = atoi(line.substr(0, space_index).c_str());
+	line = line.substr(space_index+1);
+
+	time_bank = atof(line.c_str());
+
+}
+
+void Player::get_action(std::string line){
+  int space_index, colon_index;
+
+	space_index = line.find_first_of(' ');
+	pot_size = atoi(line.substr(0, space_index).c_str());
+	line = line.substr(space_index+1);
+
+	space_index = line.find_first_of(' ');
+	num_boardcards = atoi(line.substr(0, space_index).c_str());
+	line = line.substr(space_index+1);
+  
+  for(int i=0; i<num_boardcards; i++) {
+		space_index = line.find_first_of(' ');
+	  std::string c = line.substr(0, space_index);
+		Card card;
+	  card.rank = c[0];
+	  card.suit = c[1];
+		hands[hand_id%NUM_HANDS-1].cards[i+3] = card; // keep track of last 1000 hands
+	  line = line.substr(space_index+1);
+	}
+ 
+  space_index = line.find_first_of(' ');
+	int num_lastactions = atoi(line.substr(0, space_index).c_str());
+	line = line.substr(space_index+1);
+
+	for(int i=0; i<num_lastactions; i++) {
+		space_index = line.find_first_of(' ');
+		std::string actstr = line.substr(0, space_index); // string of one action
+		PerformedAction act;
+		// find : separator
+		colon_index = actstr.find_first_of(':');
+    act.action = actstr.substr(0, colon_index);
+	  if (act.action.compare("BET") == 0 || act.action.compare("POST") == 0 || 
+				act.action.compare("RAISE") == 0 || act.action.compare("REFUND") == 0 || 
+				act.action.compare("TIE") == 0 || act.action.compare("WIN") == 0){
+      actstr = actstr.substr(colon_index+1);
+			colon_index = actstr.find_first_of(':');
+			act.amount = atoi(actstr.substr(0, colon_index).c_str());
+		  act.actor = actstr.substr(colon_index+1);
+		} else if (act.action.compare("CALL") == 0 || act.action.compare("CHECK") == 0 || 
+				act.action.compare("FOLD") == 0){
+      act.actor = actstr.substr(colon_index+1);
+		} else if (act.action.compare("DEAL") == 0){
+      act.street = actstr.substr(colon_index+1);
+		} else if (act.action.compare("SHOW") == 0){
+			actstr= actstr.substr(colon_index+1);
+			colon_index = actstr.find_first_of(':');
+			act.showcard1 = str_to_card(actstr.substr(0, colon_index));
+			actstr = actstr.substr(colon_index+1);
+			colon_index = actstr.find_first_of(':');
+			act.showcard2 = str_to_card(actstr.substr(0, colon_index));
+			act.actor = actstr.substr(colon_index+1);
+    }
+
+		action_list[hand_id%NUM_HANDS-1].push_back(act);	// add act to action_list
+	  line = line.substr(space_index+1);
+	}
+
+  space_index = line.find_first_of(' ');
+  int num_legalactions = atoi(line.substr(0, space_index).c_str());
+  line = line.substr(space_index+1);
+
+  for(int i=0; i<num_legalactions; i++) {
+    space_index = line.find_first_of(' ');
+		std::string actstr = line.substr(0, space_index);
+	  LegalAction act;
+	  // find : separator
+	  colon_index = actstr.find_first_of(':');
+	  act.action = actstr.substr(0, colon_index);
+	  if (act.action.compare("BET") == 0 || act.action.compare("RAISE") == 0){
+      actstr = actstr.substr(colon_index+1);
+			colon_index = actstr.find_first_of(':');
+			act.min = atoi(actstr.substr(0, colon_index).c_str());
+			act.max = atoi(actstr.substr(colon_index+1).c_str());
+		} 
+
+	  legal_actions.insert(act); // add act to legal_actions
+	  line = line.substr(space_index+1);	
+	}	
+  
+	time_bank = atof(line.c_str());
+	
+
+} // end get_action(std::string line)
+
+void Player::hand_over(std::string line){
+  int space_index, colon_index;
+	 
+	space_index	= line.find_first_of(' ');
+	my_bank = atoi(line.substr(0, space_index).c_str());
+	line = line.substr(space_index+1);
+
+	space_index = line.find_first_of(' ');
+	opp_bank = atoi(line.substr(0, space_index).c_str());
+	line = line.substr(space_index+1);
+
+	space_index = line.find_first_of(' ');
+	num_boardcards = atoi(line.substr(0, space_index).c_str());
+	line = line.substr(space_index+1);
+
+  for(int i=0; i<num_boardcards; i++) {
+		space_index = line.find_first_of(' ');
+	  std::string c = line.substr(0, space_index);
+		Card card;
+	  card.rank = c[0];
+	  card.suit = c[1];
+		hands[hand_id%NUM_HANDS-1].cards[i+3] = card; // keep track of last 1000 hands
+	  line = line.substr(space_index+1);
+	}
+
+	space_index = line.find_first_of(' ');
+	int num_lastactions = atoi(line.substr(0, space_index).c_str());
+	line = line.substr(space_index+1);
+
+	for(int i=0; i<num_lastactions; i++) {
+		space_index = line.find_first_of(' ');
+		std::string actstr = line.substr(0, space_index); // string of one action
+		PerformedAction act;
+		// find : separator
+		colon_index = actstr.find_first_of(':');
+    act.action = actstr.substr(0, colon_index);
+	  if (act.action.compare("BET") == 0 || act.action.compare("POST") == 0 || 
+				act.action.compare("RAISE") == 0 || act.action.compare("REFUND") == 0 || 
+				act.action.compare("TIE") == 0 || act.action.compare("WIN") == 0){
+      actstr = actstr.substr(colon_index+1);
+			colon_index = actstr.find_first_of(':');
+			act.amount = atoi(actstr.substr(0, colon_index).c_str());
+		  act.actor = actstr.substr(colon_index+1);
+		} else if (act.action.compare("CALL") == 0 || act.action.compare("CHECK") == 0 || 
+				act.action.compare("FOLD") == 0){
+      act.actor = actstr.substr(colon_index+1);
+		} else if (act.action.compare("DEAL") == 0){
+      act.street = actstr.substr(colon_index+1);
+		} else if (act.action.compare("SHOW") == 0){
+			actstr= actstr.substr(colon_index+1);
+			colon_index = actstr.find_first_of(':');
+			act.showcard1 = str_to_card(actstr.substr(0, colon_index));
+			actstr = actstr.substr(colon_index+1);
+			colon_index = actstr.find_first_of(':');
+			act.showcard2 = str_to_card(actstr.substr(0, colon_index));
+			act.actor = actstr.substr(colon_index+1);
+    }
+
+		action_list[hand_id%NUM_HANDS-1].push_back(act);	// add act to action_list
+	  line = line.substr(space_index+1);
+	}
+
+  time_bank = atof(line.c_str());
+
+}
+
+void Player::get_action_respond(tcp::iostream &stream){
+  if (num_boardcards == 0){         // Pre-flop    
+		int bet = compute_betsize_model1(card1, card2, card3);
+		
+		if (button) {  // Dealer
+			PerformedAction opp_action = *(action_list[hand_id%NUM_HANDS-1].end()-1);
+			if ((opp_action.action).compare("POST") == 0) {
+        if (bet < 4) stream << "FOLD\n";
+				else if (bet < 6) stream << "CALL\n";
+				else stream << "RAISE:" << bet << "\n";
+			} else if ((opp_action.action).compare("RAISE") == 0){
+        int raise_amount = opp_action.amount;
+				if (bet < 4) stream << "FOLD\n";
+				else if (bet < 6) {
+          if (raise_amount <= bet) stream << "CALL\n";
+					else stream << "FOLD\n";
+				} else {
+					int min_raise = 0;
+					int max_raise = 0;
+					for (std::set<LegalAction>::iterator it=legal_actions.begin(); it != legal_actions.end(); ++it){
+            if ((it->action).compare("RAISE")) {
+              min_raise = it->min;
+							max_raise = it->max;
+							break;
+						}
+					}
+					if (raise_amount > bet*1.5) stream << "FOLD\n";
+					else if (raise_amount <= bet*1.5 && bet < min_raise) stream << "CALL\n";
+					else if (bet >= min_raise && bet <= max_raise) stream << "RAISE:" << bet << "\n";
+					else if (bet > max_raise) stream << "RAISE:" << max_raise << "\n";
+				}
+			}
+		} else {  // Big Blind
+      PerformedAction opp_action = *(action_list[hand_id%NUM_HANDS-1].end()-1);
+			if ((opp_action.action).compare("CALL") == 0){
+        if (bet < 6) stream << "CHECK\n";
+				else stream << "RAISE:" << bet << "\n";
+			} else if ((opp_action.action).compare("RAISE") == 0) {
+        int raise_amount = opp_action.amount;
+				if (bet < 4) stream << "FOLD\n";
+				else if (bet < 6) {
+          if (raise_amount <= bet) stream << "CALL\n";
+					else stream << "FOLD\n";
+				} else {
+					int min_raise = 0;
+					int max_raise = 0;
+					for (std::set<LegalAction>::iterator it=legal_actions.begin(); it != legal_actions.end(); ++it){
+            if ((it->action).compare("RAISE")) {
+              min_raise = it->min;
+							max_raise = it->max;
+							break;
+						}
+					}
+					if (raise_amount > bet*1.5) stream << "FOLD\n";
+					else if (raise_amount <= bet*1.5 && bet < min_raise) stream << "CALL\n";
+					else if (bet >= min_raise && bet <= max_raise) stream << "RAISE:" << bet << "\n";
+					else if (bet > max_raise) stream << "RAISE:" << max_raise << "\n";
+				} 
+			}
+		}		
+	} else if (num_boardcards == 3) { // Flop
+		// change this:
+		stream << "CHECK\n";
+		PerformedAction last_action = *(action_list[hand_id%NUM_HANDS-1].end()-1);
+
+		if (button) { // go last, see last action
+			if ((last_action.action).compare("CHECK")==0) {
+				// TODO
+				// compute bet amount
+				// stream CHECK or BET:bet
+			} else if ((last_action.action).compare("BET") ||
+								(last_action.action).compare("RAISE")) {
+				int raise_amount = last_action.amount;
+				// TODO
+				// compute bet amount
+				// stream FOLD, CALL, or RAISE:amount
+			}	
+
+
+		} else {
+			//go first if last action is "DEAL"
+			//check last_action (for CHECK and BET and RAISE)
+			if ((last_action.action).compare("DEAL") == 0) { // our first action after deal
+				// TODO
+				// compute bet amount 
+				// stream CHECK or BET:bet
+			}	else if ((last_action.action).compare("BET") || 
+								(last_action.action).compare("RAISE")) {
+					int raise_amount = last_action.amount;
+					// TODO
+					// compute bet amount
+					// stream FOLD, CALL, or RAISE:amount
+			}
+		}
+
+
+	} else if (num_boardcards == 4) { // Turn
+		stream << "CHECK\n";
+	} else if (num_boardcards == 5) { // River
+		stream << "CHECK\n";
+		// compute equity of hand with 7 cards
+		// take into account how opponent previously bet
+	}
+}
+
+/*
+input: string of 2 characters: rank, suit
+returns: Card instance 
+*/
+Card Player::str_to_card(std::string str) {
+	Card c;
+	c.rank = str[0];
+	c.suit = str[1];
+	return c;
+}
+
+
+int Player::rank_to_int(char r) {
+	if (r >= '2' && r <= '9') return r - '0';
+	else if (r=='T') return 10;
+	else if (r=='J') return 11;
+	else if (r=='Q') return 12;
+	else if (r=='K') return 13;
+	else if (r=='A') return 14;
+	else return 0;
+}
+
+int Player::compute_betsize_model1(Card c1, Card c2, Card c3) {
+
+	int r1, r2, r3;
+	r1 = rank_to_int(c1.rank);
+	r2 = rank_to_int(c2.rank);
+	r3 = rank_to_int(c3.rank);
+	
+	char s1, s2, s3;
+	s1 = c1.suit;
+	s2 = c2.suit;
+	s3 = c3.suit;
+
+	int sum = 2*(r1 + r2 + r3);
+	if (r1 == r2 && r1 == r3) return sum/6 - 2;           		 // 3 of a kind
+	else if (r1 == r2 || r1 == r3 || r2 == r3) sum+=13;  // 2 of a kind
+
+	if (s1 == s2 && s1 == s3) sum+=4;                    // 3 suited
+	else if (s1 == s2 || s1 == s3 || s2 == s3) sum+=8;   // 2 suited
+
+	// connectors
+	int diff3 = abs(r1-r2);
+	int diff2 = abs(r1-r2);
+	int diff1 = abs(r2-r3);
+	if (0<diff3 && diff3<5) sum+=(5-diff3)/2;  // smaller difference = better, divide by 2
+	if (0<diff2 && diff2<5) sum+=(5-diff2)/2;
+	if (0<diff1 && diff1<5) sum+=(5-diff1)/2;
+
+	return sum/6-2; // how much to bet to
+}
+
+
+int Player::compute_betsize_model2(Card c1, Card c2, Card c3) {
+
+	int r1, r2, r3;
+	r1 = rank_to_int(c1.rank);
+	r2 = rank_to_int(c2.rank);
+	r3 = rank_to_int(c3.rank);
+	
+	char s1, s2, s3;
+	s1 = c1.suit;
+	s2 = c2.suit;
+	s3 = c3.suit;
+
+	int sum = r1 + r2 + r3;
+	if (r1 == r2 && r1 == r3) return sum;           		 // 3 of a kind
+	else if (r1 == r2 || r1 == r3 || r2 == r3) sum+=13;  // 2 of a kind
+
+	if (s1 == s2 && s1 == s3) sum+=4;                    // 3 suited
+	else if (s1 == s2 || s1 == s3 || s2 == s3) sum+=8;   // 2 suited
+
+	// connectors
+	int diff3 = abs(r1-r2);
+	int diff2 = abs(r1-r2);
+	int diff1 = abs(r2-r3);
+	if (0<diff3 && diff3<5) sum+=(5-diff3);
+	if (0<diff2 && diff2<5) sum+=(5-diff2);
+	if (0<diff1 && diff1<5) sum+=(5-diff1);
+
+	return sum/6;
+}
+
+
+
+
+
+
+
+
+void Player::create_equity250() {	
+
+}
